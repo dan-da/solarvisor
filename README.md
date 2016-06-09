@@ -136,11 +136,15 @@ There are no other dependencies.
 
 Assuming you have PHP installed, you can run solarvisor via:
 
-```php solarvisor.php```
+```
+php solarvisor.php
+```
 
 or
 
-```./solarvisor.php```
+```
+./solarvisor.php
+```
 
 
 
