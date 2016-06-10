@@ -40,7 +40,7 @@ function main( $argv ) {
  */
 function print_params( $params ) {
     echo date('c') . " -- solarvisor starting with these settings:\n---\n";
-    echo json_encode( $params, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    echo trim( json_encode( $params, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), "{}" );
     echo "\n---\n\n";
 }
 
