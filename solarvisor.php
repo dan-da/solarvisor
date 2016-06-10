@@ -85,6 +85,7 @@ function run_main_loop( $settings ) {
         }
         else if( !$running && $stops_today >= $max_stops_per_day ) {
             echo sprintf( "Daily stop limit (%s) reached. no more starts until tomorrow\n" );
+            sleep(60);
             continue;
         }
         // enter failsafe mode if voltage not read.
