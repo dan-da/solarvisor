@@ -276,7 +276,10 @@ abstract class proc {
 function get_battery_info() {
 
     $url = 'http://192.168.2.201/theblackboxproject/htdocs/real.php';
-    $buf = file_get_contents($url);
+    
+    $context = stream_context_create( [ 'http'=> [ 'timeout' => 15 ] ] );
+    $buf = file_get_contents($url, false, $context);
+    
     $lines = explode( "\n", $buf );
     $info = [];
     foreach( $lines as $line ) {
