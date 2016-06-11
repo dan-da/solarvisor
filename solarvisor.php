@@ -84,7 +84,7 @@ function run_main_loop( $settings ) {
            $proc = new process($load_cmd, $log_file);
         }
         else if( !$running && $stops_today >= $max_stops_per_day ) {
-            echo sprintf( "Daily stop limit (%s) reached. no more starts until tomorrow\n" );
+            echo sprintf( "Daily stop limit (%s) reached. no more starts until tomorrow\n", $max_stops_per_day );
             sleep(60);
             continue;
         }
@@ -100,18 +100,20 @@ function run_main_loop( $settings ) {
                 $proc = new process( $load_cmd, $log_file );
             }
             else if( $running && $ctime < $startafter && $ctime > $stopafter && $proc ) {
-                echo sprintf( "$time   -- outside failsafe operation window and service is running. stopping\n" );
+                echo sprintf( "$time   -- outside failsafe operation window and service is running. stopping pid %s\n", $proc->get_pid() );
                 $stops_today ++;
-                $proc->stop();
+                $rc = $proc->stop();
+                echo " |- " . ($rc ? "Success" : "Failed") . "\n";
             }
             else {
                 echo sprintf( "$time   -- No action taken.\n" );
             }
         }
         else if( $running && $volts < $volts_min ) {
-            echo sprintf( "$time -- Battery voltage is %s. (below $volts_min).  stopping service\n", $volts ) ;
+            echo sprintf( "$time -- Battery voltage is %s. (below $volts_min).  stopping service pid: %s\n", $volts, $proc->get_pid() ) ;
             $stops_today ++;
-            $proc->stop();
+            $rc = $proc->stop();
+            echo " |- " . ($rc ? "Success" : "Failed") . "\n";
         }
         else if( !$running && $volts >= $volts_start_min ) {
             echo sprintf( "$time -- Battery voltage is %s.  (above $volts_start_min).  starting service\n", $volts );
@@ -400,7 +402,16 @@ class process{
             return false;
         }
 
-        if( !posix_kill( $this->pid, SIGTERM ) ) {
+        // Get group id for pid (pgid)
+        $pgid = posix_getpgid ( $this->pid );
+        if( !$pgid ) {
+           echo sprintf( "warning:  pgid not found for pid: %s\n", $this->pid );
+           return false;
+        }
+
+        // use negative pgid to kill all members of the process group.
+        // this way we should also kill childen of the process we forked.
+        if( !posix_kill( - $pgid, SIGTERM ) ) {
            echo posix_strerror( posix_get_last_error() );
         }
 
@@ -410,8 +421,8 @@ class process{
             return true;
         }
 
-        // kill -9
-        if( !posix_kill( $this->pid, SIGKILL ) ) {
+        // hmm, no luck.  try again, but with kill -9 instead.
+        if( !posix_kill( - $pgid, SIGKILL ) ) {
            echo posix_strerror( posix_get_last_error() );
         }
 
