@@ -9,26 +9,11 @@ exit( main( $argv ) );
  */
 function main( $argv ) {
     
-    // -- User Adjustable Settings --
-    $settings = [
-        // start of usable daylight power. failsafe in case voltage unavailable.
-       'failsafe-window-starttime' => '9:00',
-       
-        // start of usable daylight power. failsafe in case voltage unavailable.
-       'failsafe-window-stoptime' => '19:00',
-       
-        // prevent flutter, especially on cloudy days.
-       'max-stops-per-day' => 1, 
-    ];
-    // -- End User Adjustable Settings --
-    
     $params = get_params();
     $rc = check_params( $params );
     if( $rc != 0 ) {
         return $rc;
     }
-    
-    $params = array_merge( $settings, $params );
     print_params( $params );
     
     setup_signal_handlers();
@@ -90,8 +75,8 @@ function run_main_loop( $settings ) {
         }
         // enter failsafe mode if voltage not read.
         else if( !$volts ) {
-            $startafter = strtotime( $failsafe_window_starttime );
-            $stopafter = strtotime( $failsafe_window_stoptime );
+            $startafter = strtotime( $failsafe_start );
+            $stopafter = strtotime( $failsafe_stop );
             echo sprintf( "$time -- Battery voltage not read. failsafe mode.\n", $volts );
             
             $ctime = time();
@@ -134,7 +119,9 @@ function run_main_loop( $settings ) {
 function get_params() {
     
     $opt = getopt("ha:sp:", [ 'load-cmd:', 'force-start', 'nominal:',
-                              'volts-min:', 'volts-start-min:', 'log-file:'] );
+                              'volts-min:', 'volts-start-min:', 'log-file:',
+                              'failsafe-start:', 'failsafe-stop:',
+                              'max-stops:'] );
                              
     $params['load-cmd'] = @$opt['load-cmd'];
     $params['force_start'] = isset( $opt['force-start'] );
@@ -142,6 +129,9 @@ function get_params() {
     $params['volts-min'] = @$opt['volts-min'];
     $params['volts-start-min'] = @$opt['volts-start-min'];
     $params['log-file'] = @$opt['log-file'] ?: '/dev/null';
+    $params['failsafe-start'] = @$opt['failsafe-start'] ?: '09:00';
+    $params['failsafe-stop'] = @$opt['failsafe-stop'] ?: '18:00';
+    $params['max-stops'] = @$opt['max-stops'] ?: 1;
     
     return $params;
 }
@@ -186,9 +176,38 @@ function check_params( &$params ) {
         $params['volts-start-min'] = @$params['volts-start-min'] ?: $nominal_limits['volts-start-min'];
     }
     
-    
     if( $params['volts-min'] >= $params['volts-start-min'] ) {
         echo sprintf( "volts-start-min (%s) must be greater than volts-min (%s)\n", $params['volts-start-min'], $params['volts-min']);
+        return 1;
+    }
+
+    if( (int)@$params['max-stops'] <= 0  ) {
+        echo sprintf( "max-stops must be an integer greater than 0.\n" );
+        return 1;
+    }
+
+    $fs_start = @strtotime( $params['failsafe-start'] );
+    $fs_stop = @strtotime( $params['failsafe-stop'] );
+    
+    if( !$fs_start  ) {
+        echo sprintf( "Invalid value for --failsafe-start\n" );
+        return 1;
+    }
+    if( !$fs_stop  ) {
+        echo sprintf( "Invalid value for --failsafe-stop\n" );
+        return 1;
+    }
+    
+    $fs_start_len_ok = between( strlen( $params['failsafe-start'] ), 4, 5); 
+    $fs_stop_len_ok = between( strlen( $params['failsafe-stop'] ), 4, 5); 
+    if( abs( $fs_stop - time() ) > 86400 || abs( $fs_start - time() ) > 86400
+        || !$fs_start_len_ok || !$fs_stop_len_ok ) {
+        echo "failsafe-start time and failsafe-stop time must be specified as hours, eg: 09:00 or 18:00.\n";
+        return 1;
+    }
+    
+    if( $fs_stop <= $fs_start ) {
+        echo "failsafe-start time must precede failsafe-stop time.\n";
         return 1;
     }
     
@@ -341,6 +360,9 @@ function print_help() {
                                default = 51 unless --nominal is used.
     --volts-start-min=<v>   minimum voltage before starting load.
                                default = 53 unless --nominal is used.
+    --failsafe-start=<t>    failsafe window start time.  default=09:00
+    --failsafe-stop=<t>     failsafe window end time.    default=18:00
+    --max-stops=<n>         maximum stops per day. default=1
     --log-file=<path>       path to send load-cmd output. default = /dev/null
     
     -h                      Print this help.
@@ -370,6 +392,7 @@ class process{
     private function run(){
 //        $command = sprintf( 'nohup %s > %s 2>&1 & echo $!', escapeshellcmd($this->command), $this->logpath );
         $command = sprintf( '%s > %s 2>&1 & echo $!', escapeshellcmd($this->command), $this->logpath );
+        // posix_setsid();
         exec($command ,$op);
         $this->pid = (int)$op[0];
         echo "pid = " . $this->pid . "\n";
@@ -383,11 +406,12 @@ class process{
         return $this->pid;
     }
 
-    public function status(){
-        if( !$this->pid ) {
+    public function status( $pid = null ){
+        $checkpid = $pid ?: $this->pid;
+        if( !$checkpid ) {
             return false;
         }
-        return posix_kill( $this->pid, 0 );
+        return posix_kill( $checkpid, 0 );
     }
 
     public function start(){
@@ -402,27 +426,47 @@ class process{
             return false;
         }
 
-        // Get group id for pid (pgid)
-        $pgid = posix_getpgid ( $this->pid );
-        if( !$pgid ) {
-           echo sprintf( "warning:  pgid not found for pid: %s\n", $this->pid );
-           return false;
-        }
-
-        // use negative pgid to kill all members of the process group.
-        // this way we should also kill childen of the process we forked.
-        if( !posix_kill( - $pgid, SIGTERM ) ) {
+        //use ps to get all the children of this process, and kill them
+        $ppid = $this->pid;
+        
+        $rstop = function( $ppid ) use ( &$rstop ) {
+            $pids = preg_split('/\s+/', `ps -o pid --no-heading --ppid $ppid`);
+            $cpids = [];
+            foreach($pids as $pid) {
+                if(is_numeric($pid)) {
+                    $cpids = $rstop( $pid );
+                    echo " |- killing child pid: $pid\n";
+                    if( !posix_kill($pid, SIGTERM) ) {
+                       echo posix_strerror( posix_get_last_error() );
+                    }
+                }
+            }
+            return array_merge( $pids, $cpids );
+        };
+        $pids = $rstop( $this->pid );
+        
+        if( !posix_kill( $this->pid, SIGTERM ) ) {
            echo posix_strerror( posix_get_last_error() );
         }
-
+        
         sleep( 3 );
+
         if ($this->status() == false) {
             $this->pid = null;
+        }
+        
+        foreach($pids as $pid) {
+            if( $this->status( $pid )) {
+                return false;
+            }
+        }
+        
+        if (!$this->pid) {
             return true;
         }
 
         // hmm, no luck.  try again, but with kill -9 instead.
-        if( !posix_kill( - $pgid, SIGKILL ) ) {
+        if( !posix_kill( $this->pid, SIGKILL ) ) {
            echo posix_strerror( posix_get_last_error() );
         }
 
