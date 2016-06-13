@@ -68,7 +68,7 @@ function run_main_loop( $settings ) {
            echo sprintf( "$time -- Forcing start because --force-start used.  starting\n" );
            $proc = new process($load_cmd, $log_file);
         }
-        else if( !$running && $stops_today >= $max_stops_per_day ) {
+        else if( !$running && $stops_today >= $max_stops ) {
             echo sprintf( "Daily stop limit (%s) reached. no more starts until tomorrow\n", $max_stops_per_day );
             sleep(60);
             continue;
