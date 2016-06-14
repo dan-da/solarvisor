@@ -69,29 +69,39 @@ function run_main_loop( $settings ) {
            $proc = new process($load_cmd, $log_file);
         }
         else if( !$running && $stops_today >= $max_stops ) {
-            echo sprintf( "$time -- Daily stop limit (%s) reached. no more starts until tomorrow\n", $max_stops_per_day );
+            echo sprintf( "$time -- Daily stop limit (%s) reached. no more starts until tomorrow\n", $max_stops );
             sleep(60);
             continue;
         }
-        // enter failsafe mode if voltage not read.
         else if( !$volts ) {
             $startafter = strtotime( $failsafe_start );
             $stopafter = strtotime( $failsafe_stop );
+            $ctime = time();
+
+            // handle case where stop time is before start time, eg start at 9 am and stop at 1am.
+            if( $stopafter < $startafter ) {
+                if( $ctime < $startafter ) {
+                    $startafter -= 86400;
+                }
+                else {
+                    $stopafter += 86400;
+                }
+            }
             echo sprintf( "$time -- Battery voltage not read. failsafe mode.\n", $volts );
             
-            $ctime = time();
-            if( !$running && $ctime > $startafter && $ctime < $stopafter ) {
+            $in_window = between( $ctime, $startafter, $stopafter );
+            if( !$running && $in_window ) {
                 echo sprintf( "$time   -- within failsafe operation window and service not running. starting\n" );
                 $proc = new process( $load_cmd, $log_file );
             }
-            else if( $running && $ctime < $startafter && $ctime > $stopafter && $proc ) {
+            else if( $running && !$in_window && $proc ) {
                 echo sprintf( "$time   -- outside failsafe operation window and service is running. stopping pid %s\n", $proc->get_pid() );
                 $stops_today ++;
                 $rc = $proc->stop();
                 echo " |- " . ($rc ? "Success" : "Failed") . "\n";
             }
             else {
-                echo sprintf( "$time   -- No action taken.\n" );
+                echo sprintf( "$time -- %s operation window and service %s running. No action taken.\n", $in_window ? 'In' : 'Outside', $running ? 'is' : 'is not' );
             }
         }
         else if( $running && $volts < $volts_min ) {
@@ -207,8 +217,7 @@ function check_params( &$params ) {
     }
     
     if( $fs_stop <= $fs_start ) {
-        echo "failsafe-start time must precede failsafe-stop time.\n";
-        return 1;
+        echo "Warning: failsafe-stop time precedes failsafe-start time.  Assuming stop next day.\n";
     }
     
     return 0;
