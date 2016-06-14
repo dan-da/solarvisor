@@ -69,7 +69,7 @@ function run_main_loop( $settings ) {
            $proc = new process($load_cmd, $log_file);
         }
         else if( !$running && $stops_today >= $max_stops ) {
-            echo sprintf( "Daily stop limit (%s) reached. no more starts until tomorrow\n", $max_stops_per_day );
+            echo sprintf( "$time -- Daily stop limit (%s) reached. no more starts until tomorrow\n", $max_stops_per_day );
             sleep(60);
             continue;
         }
