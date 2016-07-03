@@ -115,9 +115,11 @@ function run_main_loop( $settings ) {
             $proc = new process( $load_cmd, $log_file );
         }
         else {
-            echo sprintf( "$time -- Battery voltage is %s and service is %srunning.  No action taken\n", 
+            echo sprintf( "$time -- Voltage: %s. Running: %s.  No change.  min/start v: %s/%s\n", 
                           $volts,
-                          $running ? '' : 'not ' );
+                          $running ? 'yes' : 'no',
+                          $volts_min,
+                          $volts_start_min );
         }
         sleep(60);
     } 
