@@ -52,6 +52,7 @@ function run_main_loop( $settings ) {
 
     $proc = &proc::$proc;
     $cnt = 0;
+    $last_stop_time = 0;
     while( true ) {
         $running = $proc ? $proc->status() : false;
         $batt_info = get_battery_info();
@@ -91,12 +92,18 @@ function run_main_loop( $settings ) {
             
             $in_window = between( $ctime, $startafter, $stopafter );
             if( !$running && $in_window ) {
-                echo sprintf( "$time   -- within failsafe operation window and service not running. starting\n" );
-                $proc = new process( $load_cmd, $log_file );
+                if( between( $last_stop_time, $startafter, $stopafter ) ) {
+                     echo sprintf( "$time   -- not running, but already stopped within failsafe window. no action.\n" );
+                }
+                else {
+                    echo sprintf( "$time   -- within failsafe operation window and service not running. starting\n" );
+                    $proc = new process( $load_cmd, $log_file );
+                }
             }
             else if( $running && !$in_window && $proc ) {
                 echo sprintf( "$time   -- outside failsafe operation window and service is running. stopping pid %s\n", $proc->get_pid() );
                 $stops_today ++;
+                $last_stop_time = time();
                 $rc = $proc->stop();
                 echo " |- " . ($rc ? "Success" : "Failed") . "\n";
             }
@@ -107,12 +114,14 @@ function run_main_loop( $settings ) {
         else if( $running && $volts < $volts_min ) {
             echo sprintf( "$time -- Battery voltage is %s. (below $volts_min).  stopping service pid: %s\n", $volts, $proc->get_pid() ) ;
             $stops_today ++;
+            $last_stop_time = time();
             $rc = $proc->stop();
             echo " |- " . ($rc ? "Success" : "Failed") . "\n";
         }
         else if( !$running && $volts >= $volts_start_min ) {
             echo sprintf( "$time -- Battery voltage is %s.  (above $volts_start_min).  starting service\n", $volts );
             $proc = new process( $load_cmd, $log_file );
+            $last_stop_time = 0;  // reset.
         }
         else {
             echo sprintf( "$time -- Voltage: %s. Running: %s.  No change.  min/start v: %s/%s\n", 
@@ -143,7 +152,7 @@ function get_params() {
     $params['log-file'] = @$opt['log-file'] ?: '/dev/null';
     $params['failsafe-start'] = @$opt['failsafe-start'] ?: '09:00';
     $params['failsafe-stop'] = @$opt['failsafe-stop'] ?: '18:00';
-    $params['max-stops'] = @$opt['max-stops'] ?: 1;
+    $params['max-stops'] = @$opt['max-stops'] ?: 2;
     
     return $params;
 }
@@ -373,7 +382,7 @@ function print_help() {
                                default = 53 unless --nominal is used.
     --failsafe-start=<t>    failsafe window start time.  default=09:00
     --failsafe-stop=<t>     failsafe window end time.    default=18:00
-    --max-stops=<n>         maximum stops per day. default=1
+    --max-stops=<n>         maximum stops per day. default=2
     --log-file=<path>       path to send load-cmd output. default = /dev/null
     
     -h                      Print this help.
