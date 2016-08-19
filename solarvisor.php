@@ -150,7 +150,7 @@ function get_params() {
     $params['volts-min'] = @$opt['volts-min'];
     $params['volts-start-min'] = @$opt['volts-start-min'];
     $params['log-file'] = @$opt['log-file'] ?: '/dev/null';
-    $params['failsafe-start'] = @$opt['failsafe-start'] ?: '09:00';
+    $params['failsafe-start'] = @$opt['failsafe-start'] ?: '10:30';
     $params['failsafe-stop'] = @$opt['failsafe-stop'] ?: '18:00';
     $params['max-stops'] = @$opt['max-stops'] ?: 2;
     
@@ -380,7 +380,7 @@ function print_help() {
                                default = 51 unless --nominal is used.
     --volts-start-min=<v>   minimum voltage before starting load.
                                default = 53 unless --nominal is used.
-    --failsafe-start=<t>    failsafe window start time.  default=09:00
+    --failsafe-start=<t>    failsafe window start time.  default=10:30
     --failsafe-stop=<t>     failsafe window end time.    default=18:00
     --max-stops=<n>         maximum stops per day. default=2
     --log-file=<path>       path to send load-cmd output. default = /dev/null
